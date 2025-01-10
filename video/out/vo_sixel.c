@@ -35,10 +35,6 @@
 #include "video/sws_utils.h"
 #include "video/mp_image.h"
 
-#if HAVE_POSIX
-#include <unistd.h>
-#endif
-
 #define IMGFMT IMGFMT_RGB24
 
 #define TERM_ESC_USE_GLOBAL_COLOR_REG   "\033[?1070l"
@@ -77,7 +73,7 @@ struct priv {
     int num_cols, num_rows;  // terminal size in cells
     int canvas_ok;  // whether canvas vo->dwidth and vo->dheight are positive
 
-    int previous_histgram_colors;
+    int previous_histogram_colors;
 
     struct mp_rect src_rect;
     struct mp_rect dst_rect;
@@ -91,23 +87,23 @@ static const unsigned int depth = 3;
 static int detect_scene_change(struct vo* vo)
 {
     struct priv* priv = vo->priv;
-    int previous_histgram_colors = priv->previous_histgram_colors;
-    int histgram_colors = 0;
+    int previous_histogram_colors = priv->previous_histogram_colors;
+    int histogram_colors = 0;
 
     // If threshold is set negative, then every frame must be a scene change
     if (priv->dither == NULL || priv->opts.threshold < 0)
         return 1;
 
-    histgram_colors = sixel_dither_get_num_of_histogram_colors(priv->testdither);
+    histogram_colors = sixel_dither_get_num_of_histogram_colors(priv->testdither);
 
-    int color_difference_count = previous_histgram_colors - histgram_colors;
+    int color_difference_count = previous_histogram_colors - histogram_colors;
     color_difference_count = (color_difference_count > 0) ?  // abs value
                               color_difference_count : -color_difference_count;
 
     if (100 * color_difference_count >
-        priv->opts.threshold * previous_histgram_colors)
+        priv->opts.threshold * previous_histogram_colors)
     {
-        priv->previous_histgram_colors = histgram_colors; // update history
+        priv->previous_histogram_colors = histogram_colors; // update history
         return 1;
     } else {
         return 0;
@@ -161,7 +157,7 @@ static SIXELSTATUS prepare_dynamic_palette(struct vo *vo)
     SIXELSTATUS status = SIXEL_FALSE;
     struct priv *priv = vo->priv;
 
-    /* create histgram and construct color palette
+    /* create histogram and construct color palette
      * with median cut algorithm. */
     status = sixel_dither_initialize(priv->testdither, priv->buffer,
                                      priv->width, priv->height,
@@ -382,7 +378,7 @@ static int reconfig(struct vo *vo, struct mp_image_params *params)
     return ret;
 }
 
-static void draw_frame(struct vo *vo, struct vo_frame *frame)
+static bool draw_frame(struct vo *vo, struct vo_frame *frame)
 {
     struct priv *priv = vo->priv;
     SIXELSTATUS status;
@@ -395,7 +391,7 @@ static void draw_frame(struct vo *vo, struct vo_frame *frame)
     bool resized     = false;
     update_canvas_dimensions(vo);
     if (!priv->canvas_ok)
-        return;
+        goto done;
 
     if (prev_rows != priv->num_rows || prev_cols != priv->num_cols ||
         prev_width != vo->dwidth || prev_height != vo->dheight)
@@ -413,7 +409,7 @@ static void draw_frame(struct vo *vo, struct vo_frame *frame)
     if (frame->repeat && !frame->redraw && !resized) {
         // Frame is repeated, and no need to update OSD either
         priv->skip_frame_draw = true;
-        return;
+        goto done;
     } else {
         // Either frame is new, or OSD has to be redrawn
         priv->skip_frame_draw = false;
@@ -461,6 +457,9 @@ static void draw_frame(struct vo *vo, struct vo_frame *frame)
 
     if (mpi)
         talloc_free(mpi);
+
+done:
+    return VO_TRUE;
 }
 
 static void flip_page(struct vo *vo)
@@ -520,6 +519,7 @@ static int preinit(struct vo *vo)
         sixel_strwrite(TERM_ESC_ALT_SCREEN);
 
     sixel_strwrite(TERM_ESC_HIDE_CURSOR);
+    terminal_set_mouse_input(true);
 
     /* don't use private color registers for each frame. */
     sixel_strwrite(TERM_ESC_USE_GLOBAL_COLOR_REG);
@@ -536,7 +536,7 @@ static int preinit(struct vo *vo)
         }
     }
 
-    priv->previous_histgram_colors = 0;
+    priv->previous_histogram_colors = 0;
 
     return 0;
 }
@@ -559,6 +559,7 @@ static void uninit(struct vo *vo)
     struct priv *priv = vo->priv;
 
     sixel_strwrite(TERM_ESC_RESTORE_CURSOR);
+    terminal_set_mouse_input(false);
 
     if (priv->opts.alt_screen)
         sixel_strwrite(TERM_ESC_NORMAL_SCREEN);
@@ -618,8 +619,6 @@ const struct vo_driver video_out_sixel = {
         {"rows", OPT_INT(opts.rows)},
         {"cols", OPT_INT(opts.cols)},
         {"config-clear", OPT_BOOL(opts.config_clear), },
-        {"exit-clear", OPT_BOOL(opts.alt_screen),
-            .deprecation_message = "replaced by --vo-sixel-alt-screen"},
         {"alt-screen", OPT_BOOL(opts.alt_screen), },
         {"buffered", OPT_BOOL(opts.buffered), },
         {0}
