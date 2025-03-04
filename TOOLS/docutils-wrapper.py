@@ -27,17 +27,23 @@ import sys
 
 
 def convert_depfile(output, depfile):
-    with open(depfile, 'r') as f:
+    with open(depfile) as f:
         deps = f.readlines()
 
-    with open(depfile, 'w') as f:
+    with open(depfile, "w") as f:
         f.write(os.path.abspath(output))
-        f.write(': \\\n')
+        f.write(": \\\n")
         for dep in deps:
             dep = dep[:-1]
-            f.write('\t')
+            f.write("\t")
             f.write(os.path.abspath(dep))
-            f.write(' \\\n')
+            f.write(" \\\n")
+
+def remove(path):
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
 
 argv = sys.argv[1:]
 
@@ -45,12 +51,17 @@ depfile = None
 output = argv[-1]
 
 for opt, optarg in zip(argv, argv[1:]):
-    if opt == '--record-dependencies':
+    if opt == "--record-dependencies":
         depfile = optarg
 
 try:
-    subprocess.run(argv)
-    convert_depfile(output, depfile)
-except:
-    os.remove(output)
-    os.remove(depfile)
+    proc = subprocess.run(argv, check=True)
+    if depfile is not None:
+        convert_depfile(output, depfile)
+except Exception:
+    remove(output)
+    if depfile is not None:
+        remove(depfile)
+    sys.exit(1)
+
+sys.exit(proc.returncode)

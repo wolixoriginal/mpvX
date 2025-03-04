@@ -1,6 +1,9 @@
-#include "common/common.h"
-
 #include "node.h"
+
+#include <mpv/client.h>
+
+#include "common/common.h"
+#include "bstr.h"
 
 // Init a node with the given format. If parent is not NULL, it is set as
 // parent allocation according to m_option_type_node rules (which means
@@ -73,6 +76,15 @@ void node_map_add_string(struct mpv_node *dst, const char *key, const char *val)
     entry->u.string = talloc_strdup(dst->u.list, val);
 }
 
+void node_map_add_bstr(struct mpv_node *dst, const char *key, bstr val)
+{
+    assert(val.start);
+
+    struct mpv_node *entry = node_map_add(dst, key, MPV_FORMAT_NONE);
+    entry->format = MPV_FORMAT_STRING;
+    entry->u.string = bstrto0(dst->u.list, val);
+}
+
 void node_map_add_int64(struct mpv_node *dst, const char *key, int64_t v)
 {
     node_map_add(dst, key, MPV_FORMAT_INT64)->u.int64 = v;
@@ -108,7 +120,7 @@ mpv_node *node_map_bget(mpv_node *src, struct bstr key)
 
 // Note: for MPV_FORMAT_NODE_MAP, this (incorrectly) takes the order into
 //       account, instead of treating it as set.
-bool equal_mpv_value(const void *a, const void *b, mpv_format format)
+bool equal_mpv_value(const void *a, const void *b, int format)
 {
     switch (format) {
     case MPV_FORMAT_NONE:
