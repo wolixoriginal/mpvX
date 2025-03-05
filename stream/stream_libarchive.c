@@ -80,7 +80,7 @@ static bool probe_zip(struct stream *s)
 static int mp_archive_probe(struct stream *src)
 {
     int flags = 0;
-    assert(stream_tell(src) == 0);
+    mp_assert(stream_tell(src) == 0);
     if (probe_zip(src))
         flags |= MP_ARCHIVE_FLAG_MAYBE_ZIP;
 
@@ -168,6 +168,10 @@ static int open_cb(struct archive *arch, void *priv)
                                     vol->mpa->primary_src->stream_origin,
                                  vol->mpa->primary_src->cancel,
                                  vol->mpa->primary_src->global);
+        if (vol->src && vol->src->is_directory) {
+            free_stream(vol->src);
+            vol->src = NULL;
+        }
         // We pretend that failure to open a stream means it was not found,
         // we assume in turn means that the volume doesn't exist (since
         // libarchive builds volumes as some sort of abstraction on top of its
@@ -583,6 +587,8 @@ static int archive_entry_open(stream_t *stream)
 
     char *base = talloc_strdup(p, stream->path);
     char *name = strchr(base, '|');
+    if (!name)
+        return STREAM_ERROR;
     *name++ = '\0';
     if (name[0] == '/')
         name += 1;

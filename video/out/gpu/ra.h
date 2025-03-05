@@ -90,7 +90,7 @@ enum ra_ctype {
     RA_CTYPE_FLOAT,         // float formats (signed, any bit size)
 };
 
-// All formats must be useable as texture formats. All formats must be byte
+// All formats must be usable as texture formats. All formats must be byte
 // aligned (all pixels start and end on a byte boundary), at least as far CPU
 // transfers are concerned.
 struct ra_format {
@@ -131,8 +131,8 @@ struct ra_tex_params {
     // Size of the texture. 1D textures require h=d=1, 2D textures require d=1.
     int w, h, d;
     const struct ra_format *format;
-    bool render_src;        // must be useable as source texture in a shader
-    bool render_dst;        // must be useable as target texture in a shader
+    bool render_src;        // must be usable as source texture in a shader
+    bool render_dst;        // must be usable as target texture in a shader
     bool storage_dst;       // must be usable as a storage image (RA_VARTYPE_IMG_W)
     bool blit_src;          // must be usable as a blit source
     bool blit_dst;          // must be usable as a blit destination
@@ -143,8 +143,8 @@ struct ra_tex_params {
                             // be true depends on ra_format.linear_filter)
     bool src_repeat;        // if false, clamp texture coordinates to edge
                             // if true, repeat texture coordinates
-    bool non_normalized;    // hack for GL_TEXTURE_RECTANGLE OSX idiocy
-                            // always set to false, except in OSX code
+    bool non_normalized;    // hack for GL_TEXTURE_RECTANGLE macOS idiocy
+                            // always set to false, except in macOS code
     bool external_oes;      // hack for GL_TEXTURE_EXTERNAL_OES idiocy
     // If non-NULL, the texture will be created with these contents. Using
     // this does *not* require setting host_mutable. Otherwise, the initial
@@ -408,7 +408,7 @@ struct ra_fns {
     void (*tex_destroy)(struct ra *ra, struct ra_tex *tex);
 
     // Upload data to a texture. This is an extremely common operation. When
-    // using a buffer, the contants of the buffer must exactly match the image
+    // using a buffer, the contents of the buffer must exactly match the image
     // - conversions between bit depth etc. are not supported. The buffer *may*
     // be marked as "in use" while this operation is going on, and the contents
     // must not be touched again by the API user until buf_poll returns true.
@@ -461,7 +461,7 @@ struct ra_fns {
 
     // Copy a sub-rectangle from one texture to another. The source/dest region
     // is always within the texture bounds. Areas outside the dest region are
-    // preserved. The formats of the textures must be losely compatible. The
+    // preserved. The formats of the textures must be loosely compatible. The
     // dst texture can be a swapchain framebuffer, but src can not. Only 2D
     // textures are supported.
     // The textures must have blit_src and blit_dst set, respectively.
@@ -493,7 +493,7 @@ struct ra_fns {
 
     // Start recording a timer. Note that valid usage requires you to pair
     // every start with a stop. Trying to start a timer twice, or trying to
-    // stop a timer before having started it, consistutes invalid usage.
+    // stop a timer before having started it, constitutes invalid usage.
     void (*timer_start)(struct ra *ra, ra_timer *timer);
 
     // Stop recording a timer. This also returns any results that have been

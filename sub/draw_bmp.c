@@ -169,9 +169,9 @@ static bool blend_overlay_with_video(struct mp_draw_sub_cache *p,
                 continue;
             int x = sx * SLICE_W + s->x0;
 
-            assert(MP_IS_ALIGNED(x, p->align_x));
-            assert(MP_IS_ALIGNED(w, p->align_x));
-            assert(x + w <= p->w);
+            mp_assert(MP_IS_ALIGNED(x, p->align_x));
+            mp_assert(MP_IS_ALIGNED(w, p->align_x));
+            mp_assert(x + w <= p->w);
 
             repack_line(p->overlay_to_f32, 0, 0, x, y, w);
             repack_line(p->video_to_f32, 0, 0, x, y, w);
@@ -257,8 +257,8 @@ static void mark_rect(struct mp_draw_sub_cache *p, int x0, int y0, int x1, int y
     x1 = MP_ALIGN_UP(x1, p->align_x);
     y1 = MP_ALIGN_UP(y1, p->align_y);
 
-    assert(x0 >= 0 && x0 <= x1 && x1 <= p->w);
-    assert(y0 >= 0 && y0 <= y1 && y1 <= p->h);
+    mp_assert(x0 >= 0 && x0 <= x1 && x1 <= p->w);
+    mp_assert(y0 >= 0 && y0 <= y1 && y1 <= p->h);
 
     const int sx0 = x0 / SLICE_W;
     const int sx1 = MPMIN(x1 / SLICE_W, p->s_w - 1);
@@ -324,7 +324,7 @@ static void draw_ass_rgba(uint8_t *dst, ptrdiff_t dst_stride,
 
 static void render_ass(struct mp_draw_sub_cache *p, struct sub_bitmaps *sb)
 {
-    assert(sb->format == SUBBITMAP_LIBASS);
+    mp_assert(sb->format == SUBBITMAP_LIBASS);
 
     for (int i = 0; i < sb->num_parts; i++) {
         struct sub_bitmap *s = &sb->parts[i];
@@ -368,7 +368,7 @@ static void draw_rgba(uint8_t *dst, ptrdiff_t dst_stride,
 static bool render_rgba(struct mp_draw_sub_cache *p, struct part *part,
                         struct sub_bitmaps *sb)
 {
-    assert(sb->format == SUBBITMAP_BGRA);
+    mp_assert(sb->format == SUBBITMAP_BGRA);
 
     if (part->change_id != sb->change_id) {
         for (int n = 0; n < part->num_imgs; n++)
@@ -416,8 +416,8 @@ static bool render_rgba(struct mp_draw_sub_cache *p, struct part *part,
             sh = MPCLAMP(dh / fy, 1, s->h);
         }
 
-        assert(sx >= 0 && sw > 0 && sx + sw <= s->w);
-        assert(sy >= 0 && sh > 0 && sy + sh <= s->h);
+        mp_assert(sx >= 0 && sw > 0 && sx + sw <= s->w);
+        mp_assert(sy >= 0 && sh > 0 && sy + sh <= s->h);
 
         ptrdiff_t s_stride = s->stride;
         void *s_ptr = (char *)s->bitmap + s_stride * sy + sx * 4;
@@ -431,7 +431,7 @@ static bool render_rgba(struct mp_draw_sub_cache *p, struct part *part,
                 mp_image_set_size(&src_img, sw, sh);
                 src_img.planes[0] = s_ptr;
                 src_img.stride[0] = s_stride;
-                src_img.params.alpha = MP_ALPHA_PREMUL;
+                src_img.params.repr.alpha = PL_ALPHA_PREMULTIPLIED;
 
                 scaled = mp_image_alloc(IMGFMT_BGRA, dw, dh);
                 if (!scaled)
@@ -443,8 +443,8 @@ static bool render_rgba(struct mp_draw_sub_cache *p, struct part *part,
                     return false;
             }
 
-            assert(scaled->w == dw);
-            assert(scaled->h == dh);
+            mp_assert(scaled->w == dw);
+            mp_assert(scaled->h == dh);
 
             s_stride = scaled->stride[0];
             s_ptr = scaled->planes[0];
@@ -476,7 +476,7 @@ static bool render_sb(struct mp_draw_sub_cache *p, struct sub_bitmaps *sb)
 
 static void clear_rgba_overlay(struct mp_draw_sub_cache *p)
 {
-    assert(p->rgba_overlay->imgfmt == IMGFMT_BGRA);
+    mp_assert(p->rgba_overlay->imgfmt == IMGFMT_BGRA);
 
     for (int y = 0; y < p->rgba_overlay->h; y++) {
         uint32_t *px = mp_image_pixel_ptr(p->rgba_overlay, 0, 0, y);
@@ -484,6 +484,10 @@ static void clear_rgba_overlay(struct mp_draw_sub_cache *p)
 
         for (int sx = 0; sx < p->s_w; sx++) {
             struct slice *s = &line[sx];
+
+            // Ensure this final slice doesn't extend beyond the width of p->s_w
+            if (s->x1 == SLICE_W && sx == p->s_w - 1 && y == p->rgba_overlay->h - 1)
+                s->x1 = MPMIN(p->w - ((p->s_w - 1) * SLICE_W), s->x1);
 
             if (s->x0 <= s->x1) {
                 memset(px + s->x0, 0, (s->x1 - s->x0) * 4);
@@ -521,7 +525,7 @@ static bool reinit_to_video(struct mp_draw_sub_cache *p)
     struct mp_image_params *params = &p->params;
     mp_image_params_guess_csp(params);
 
-    bool need_premul = params->alpha != MP_ALPHA_PREMUL &&
+    bool need_premul = params->repr.alpha != PL_ALPHA_PREMULTIPLIED &&
         (mp_imgfmt_get_desc(params->imgfmt).flags & MP_IMGFLAG_ALPHA);
 
     // Intermediate format for video_overlay. Requirements:
@@ -540,9 +544,9 @@ static bool reinit_to_video(struct mp_draw_sub_cache *p)
     if (!p->video_to_f32)
         return false;
     mp_get_regular_imgfmt(&vfdesc, mp_repack_get_format_dst(p->video_to_f32));
-    assert(vfdesc.num_planes); // must have succeeded
+    mp_assert(vfdesc.num_planes); // must have succeeded
 
-    if (params->color.space == MP_CSP_RGB && vfdesc.num_planes >= 3) {
+    if (params->repr.sys == PL_COLOR_SYSTEM_RGB && vfdesc.num_planes >= 3) {
         use_shortcut = true;
 
         if (vfdesc.component_type == MP_COMPONENT_TYPE_UINT &&
@@ -562,7 +566,7 @@ static bool reinit_to_video(struct mp_draw_sub_cache *p)
             return false;
 
         mp_get_regular_imgfmt(&vfdesc, mp_repack_get_format_dst(p->video_to_f32));
-        assert(vfdesc.component_type == MP_COMPONENT_TYPE_FLOAT);
+        mp_assert(vfdesc.component_type == MP_COMPONENT_TYPE_FLOAT);
 
         p->blend_line = blend_line_f32;
     }
@@ -576,7 +580,7 @@ static bool reinit_to_video(struct mp_draw_sub_cache *p)
     if (!p->video_from_f32)
         return false;
 
-    assert(mp_repack_get_format_dst(p->video_to_f32) ==
+    mp_assert(mp_repack_get_format_dst(p->video_to_f32) ==
            mp_repack_get_format_src(p->video_from_f32));
 
     int overlay_fmt = 0;
@@ -630,8 +634,8 @@ static bool reinit_to_video(struct mp_draw_sub_cache *p)
     p->align_x = mp_repack_get_align_x(p->video_to_f32);
     p->align_y = mp_repack_get_align_y(p->video_to_f32);
 
-    assert(p->align_x >= mp_repack_get_align_x(p->overlay_to_f32));
-    assert(p->align_y >= mp_repack_get_align_y(p->overlay_to_f32));
+    mp_assert(p->align_x >= mp_repack_get_align_x(p->overlay_to_f32));
+    mp_assert(p->align_y >= mp_repack_get_align_y(p->overlay_to_f32));
 
     if (p->align_x > SLICE_W || p->align_y > TILE_H)
         return false;
@@ -656,9 +660,11 @@ static bool reinit_to_video(struct mp_draw_sub_cache *p)
         return false;
 
     mp_image_params_guess_csp(&p->rgba_overlay->params);
-    p->rgba_overlay->params.alpha = MP_ALPHA_PREMUL;
+    p->rgba_overlay->params.repr.alpha = PL_ALPHA_PREMULTIPLIED;
 
+    p->overlay_tmp->params.repr = params->repr;
     p->overlay_tmp->params.color = params->color;
+    p->video_tmp->params.repr = params->repr;
     p->video_tmp->params.color = params->color;
 
     if (p->rgba_overlay->imgfmt == overlay_fmt) {
@@ -671,12 +677,13 @@ static bool reinit_to_video(struct mp_draw_sub_cache *p)
         if (!p->video_overlay)
             return false;
 
+        p->video_overlay->params.repr = params->repr;
         p->video_overlay->params.color = params->color;
         p->video_overlay->params.chroma_location = params->chroma_location;
-        p->video_overlay->params.alpha = MP_ALPHA_PREMUL;
+        p->video_overlay->params.repr.alpha = PL_ALPHA_PREMULTIPLIED;
 
         if (p->scale_in_tiles)
-            p->video_overlay->params.chroma_location = MP_CHROMA_CENTER;
+            p->video_overlay->params.chroma_location = PL_CHROMA_CENTER;
 
         p->rgba_to_overlay = alloc_scaler(p);
         p->rgba_to_overlay->allow_zimg = true;
@@ -693,16 +700,16 @@ static bool reinit_to_video(struct mp_draw_sub_cache *p)
         int ys = p->video_overlay->fmt.chroma_ys;
         if (xs || ys) {
             // Require float so format selection becomes simpler (maybe).
-            assert(rflags & REPACK_CREATE_PLANAR_F32);
+            mp_assert(rflags & REPACK_CREATE_PLANAR_F32);
 
             // For extracting the alpha plane, construct a gray format that is
             // compatible with the alpha one.
             struct mp_regular_imgfmt odesc = {0};
             mp_get_regular_imgfmt(&odesc, overlay_fmt);
-            assert(odesc.component_size);
+            mp_assert(odesc.component_size);
             int aplane = odesc.num_planes - 1;
-            assert(odesc.planes[aplane].num_components == 1);
-            assert(odesc.planes[aplane].components[0] == 4);
+            mp_assert(odesc.planes[aplane].num_components == 1);
+            mp_assert(odesc.planes[aplane].components[0] == 4);
             struct mp_regular_imgfmt cadesc = odesc;
             cadesc.num_planes = 1;
             cadesc.planes[0] = (struct mp_regular_imgfmt_plane){1, {1}};
@@ -720,13 +727,14 @@ static bool reinit_to_video(struct mp_draw_sub_cache *p)
             p->alpha_overlay->stride[0] = p->video_overlay->stride[aplane];
 
             // Full range gray always has the same range as alpha.
-            p->alpha_overlay->params.color.levels = MP_CSP_LEVELS_PC;
+            p->alpha_overlay->params.repr.levels = PL_COLOR_LEVELS_FULL;
             mp_image_params_guess_csp(&p->alpha_overlay->params);
 
             p->calpha_overlay =
                 talloc_steal(p, mp_image_alloc(calpha_fmt, w >> xs, h >> ys));
             if (!p->calpha_overlay)
                 return false;
+            p->calpha_overlay->params.repr = p->alpha_overlay->params.repr;
             p->calpha_overlay->params.color = p->alpha_overlay->params.color;
 
             p->calpha_to_f32 = mp_repack_create_planar(calpha_fmt, false, rflags);
@@ -758,7 +766,7 @@ static bool reinit_to_video(struct mp_draw_sub_cache *p)
         if (!p->premul_tmp)
             return false;
         mp_image_set_params(p->premul_tmp, params);
-        p->premul_tmp->params.alpha = MP_ALPHA_PREMUL;
+        p->premul_tmp->params.repr.alpha = PL_ALPHA_PREMULTIPLIED;
 
         // Only zimg supports this.
         p->premul->force_scaler = MP_SWS_ZIMG;
@@ -783,7 +791,7 @@ static bool reinit_to_overlay(struct mp_draw_sub_cache *p)
         return false;
 
     mp_image_params_guess_csp(&p->rgba_overlay->params);
-    p->rgba_overlay->params.alpha = MP_ALPHA_PREMUL;
+    p->rgba_overlay->params.repr.alpha = PL_ALPHA_PREMULTIPLIED;
 
     // Some non-sense with the intention to somewhat isolate the returned image.
     mp_image_setfmt(&p->res_overlay, p->rgba_overlay->imgfmt);
@@ -820,7 +828,7 @@ static bool check_reinit(struct mp_draw_sub_cache *p,
 
 char *mp_draw_sub_get_dbg_info(struct mp_draw_sub_cache *p)
 {
-    assert(p);
+    mp_assert(p);
 
     return talloc_asprintf(NULL,
         "align=%d:%d ov=%-7s, ov_f=%s, v_f=%s, a=%s, ca=%s, ca_f=%s",
@@ -840,6 +848,14 @@ struct mp_draw_sub_cache *mp_draw_sub_alloc(void *ta_parent, struct mpv_global *
     return c;
 }
 
+// For tests.
+struct mp_draw_sub_cache *mp_draw_sub_alloc_test(struct mp_image *dst)
+{
+    struct mp_draw_sub_cache *c = talloc_zero(NULL, struct mp_draw_sub_cache);
+    reinit_to_video(c);
+    return c;
+}
+
 bool mp_draw_sub_bitmaps(struct mp_draw_sub_cache *p, struct mp_image *dst,
                          struct sub_bitmap_list *sbs_list)
 {
@@ -847,8 +863,8 @@ bool mp_draw_sub_bitmaps(struct mp_draw_sub_cache *p, struct mp_image *dst,
 
     // dst must at least be as large as the bounding box, or you may get memory
     // corruption.
-    assert(dst->w >= sbs_list->w);
-    assert(dst->h >= sbs_list->h);
+    mp_assert(dst->w >= sbs_list->w);
+    mp_assert(dst->h >= sbs_list->h);
 
     if (!check_reinit(p, &dst->params, true))
         return false;
@@ -925,9 +941,9 @@ static void init_rc_grid(struct rc_grid *gr, struct mp_draw_sub_cache *p,
         }
     }
 
-    assert(gr->r_h * gr->h >= p->h);
-    assert(!(gr->r_w & (SLICE_W - 1)));
-    assert(gr->r_w * gr->w >= p->w);
+    mp_assert(gr->r_h * gr->h >= p->h);
+    mp_assert(!(gr->r_w & (SLICE_W - 1)));
+    mp_assert(gr->r_w * gr->w >= p->w);
 
     // Init with empty (degenerate) rectangles.
     for (int y = 0; y < gr->h; y++) {
@@ -956,7 +972,8 @@ static void mark_rcs(struct mp_draw_sub_cache *p, struct rc_grid *gr)
                 rc->y0 = MPMIN(rc->y0, y);
                 rc->y1 = MPMAX(rc->y1, y + 1);
                 rc->x0 = MPMIN(rc->x0, xpos + s->x0);
-                rc->x1 = MPMAX(rc->x1, xpos + s->x1);
+                // Ensure this does not extend beyond the total width
+                rc->x1 = MPCLAMP(xpos + s->x1, rc->x1, p->w);
             }
         }
     }
